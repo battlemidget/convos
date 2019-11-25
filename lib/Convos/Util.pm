@@ -6,7 +6,7 @@ use Mojo::File;
 use Mojo::Util 'monkey_patch';
 use constant DEBUG => $ENV{CONVOS_DEBUG} || 0;
 
-our @EXPORT_OK = qw(DEBUG E has_many next_tick pretty_connection_name spurt);
+our @EXPORT_OK = qw(DEBUG E has_many next_tick pretty_connection_name require_module spurt);
 
 sub E {
   my ($msg, $path) = @_;
@@ -72,6 +72,20 @@ sub pretty_connection_name {
   $name =~ s!\.\w{2,3}$!!;                              # remove .com, .no, ...
   $name =~ s![\W_]+!-!g;                                # make pretty url
   $name;
+}
+
+sub require_module {
+  my $name        = pop;
+  my $required_by = shift || caller;
+
+  return $name if eval "require $name; 1";
+  die <<"HERE";
+
+  You need to install $name to use $required_by:
+
+  \$ perl ./script/cpanm -n -l ./local -M https://cpan.metacpan.org $name
+
+HERE
 }
 
 sub spurt {
