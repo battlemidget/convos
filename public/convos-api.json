@@ -449,6 +449,37 @@
         }
       }
     },
+    "/upload/assets": {
+      "post": {
+        "tags": [ "files" ],
+        "summary": "Upload assets.",
+        "operationId": "uploadAssets",
+        "x-mojo-to": "assets#upload",
+        "responses": {
+          "200": {
+            "description": "Successfully uploaded.",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "assets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": { "type": "string", "format": "uri" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error.",
+            "schema": { "$ref": "#/definitions/Error" }
+          }
+        }
+      }
+    },
     "/user": {
       "delete": {
         "tags": [ "user" ],
@@ -456,7 +487,7 @@
         "operationId": "deleteUser",
         "x-mojo-to": "user#delete",
         "responses": {
-            "200": {
+          "200": {
             "description": "Successfully deleted.",
             "schema": { "$ref": "#/definitions/Success" }
           },
