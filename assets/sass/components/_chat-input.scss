@@ -30,16 +30,6 @@
       }
     }
   }
-
-  .btn-send {
-    font-size: 1.5rem;
-    padding: 0.5em var(--gutter-small);
-    display: block;
-
-    @include if_screen("<=two-columns") {
-      padding-right: var(--gutter);
-    }
-  }
 }
 
 .chat-input_autocomplete {
@@ -75,5 +65,38 @@
     &:first-of-type {
       display: block;
     }
+  }
+}
+
+.chat-input__input-wrapper,
+.chat-input__send {
+  font-size: 1.5rem;
+  padding: 0.5em var(--gutter-small);
+  display: block;
+
+  @include if_screen("<=two-columns") {
+    padding-right: var(--gutter);
+  }
+}
+
+.chat-input__input-wrapper {
+  width: 2.5rem;
+  overflow: hidden;
+  position: relative;
+
+  &:after {
+    @extend .fas;
+    content: fa-content($fa-var-cloud-upload-alt);
+    text-align: center;
+    display: block;
+    position: absolute;
+    pointer-events: none;
+  }
+
+  input {
+    opacity: 0.2;
+    position: absolute;
+    left: 0;
+    top: 0;
   }
 }
