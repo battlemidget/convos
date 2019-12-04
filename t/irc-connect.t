@@ -3,52 +3,62 @@ use lib '.';
 use t::Helper;
 use Convos::Core;
 use Convos::Core::Backend::File;
-use Mojo::Util 'monkey_patch';
 
-my $core = Convos::Core->new;
+my $core       = Convos::Core->new;
 my $connection = $core->user({email => 'test.user@example.com'})
-  ->connection({name => 'localhost', protocol => 'irc'});
-my ($err, @state);
+  ->connection({name => 'example', protocol => 'irc'});
+my @state;
 
-$connection->state('disconnected');
+$connection->state(disconnected => '');
 $connection->on(state => sub { push @state, $_[2]->{state} });
 $connection->url->parse('irc://irc.example.com');
 
-monkey_patch(
-  'Mojo::IRC',
-  connect => sub {
-    pop->(
-      $_[0],
-      "SSL connect attempt failed error:140770FC:SSL routines:SSL23_GET_SERVER_HELLO:unknown protocol"
-    );
+no warnings 'redefine';
+my (@connect_args, @err, $stream);
+local *Mojo::IOLoop::client = sub {
+  my ($loop, $args, $cb) = @_;
+  push @connect_args, $args;
+  Mojo::IOLoop->next_tick(sub { $cb->($loop, shift @err, $stream) });
+  return rand;
+};
+
+note 'reconnect on ssl error';
+is $connection->url->query->param('tls'), undef, 'try tls first';
+
+push @err,
+  'SSL connect attempt failed error:140770FC:SSL routines:SSL23_GET_SERVER_HELLO:unknown protocol';
+push @err, 'Something went wrong';
+$connection->connect;
+Mojo::IOLoop->one_tick until @state == 2;
+
+is_deeply $connect_args[0],
+  {address => 'irc.example.com', port => 6667, timeout => 20, tls => 1, tls_verify => 0x00},
+  'connect args first';
+
+is_deeply $connect_args[1], {address => 'irc.example.com', port => 6667, timeout => 20},
+  'connect args second';
+
+is $connection->url->query->param('tls'), 0, 'tls off after fail connect';
+is_deeply \@state, [qw(queued disconnected)], 'queued => disconnected' or diag join ' ', @state;
+
+note 'reconnect on missing ssl module';
+push @err, 'IO::Socket::SSL 1.94+ required for TLS support';
+$connection->url->query->remove('tls');
+$connection->connect;
+Mojo::IOLoop->one_tick until @state == 3;
+is $connection->url->query->param('tls'), 0, 'tls off after missing module';
+is_deeply \@state, [qw(queued disconnected queued)], 'queued because of connect_queue';
+
+note 'successful connect';
+$stream = Mojo::IOLoop::Stream->new;
+Mojo::IOLoop->recurring(
+  0.1 => sub {
+    $core->_dequeue;
+    Mojo::IOLoop->stop if @state == 4;
   }
 );
-
-is $connection->url->query->param('tls'), undef, 'try tls first';
-$connection->connect(sub { $err = $_[1]; Mojo::IOLoop->stop; });
-is $connection->_irc->nick, 'test_user', 'converted username to nick';
-is $connection->_irc->user, 'testuser',  'username can only contain a-z';
-
+cmp_deeply [values %{$core->{connect_queue}}], [[$connection]], 'connect_queue';
 Mojo::IOLoop->start;
-is_deeply \@state, [qw(queued disconnected)], 'queued => disconnected' or diag join ' ', @state;
-like $err, qr{\bSSL connect attempt failed\b}, 'SSL connect failed';
-is $connection->url->query->param('tls'), 0, 'disable tls';
-
-Mojo::IOLoop->recurring(0.1 => sub { $core->_dequeue });
-monkey_patch('Mojo::IRC',
-  connect => sub { pop->($_[0], 'IO::Socket::SSL 1.94+ required for TLS support') });
-$connection->url->query->remove('tls');
-$connection->connect(sub { $err = $_[1]; Mojo::IOLoop->stop; });
-Mojo::IOLoop->start;
-cmp_deeply([values %{$core->{connect_queue}}], [[[$connection, undef]]], 'connect_queue');
-like $err, qr{\bIO::Socket::SSL\b}, 'IO::Socket::SSL missing';
-is $connection->url->query->param('tls'), 0, 'disable tls';
-is_deeply \@state, [qw(queued disconnected queued disconnected)], 'queued => disconnected';
-
-monkey_patch('Mojo::IRC', connect => sub { pop->($_[0], '') });
-$core->connect($connection, sub { $err = $_[1]; Mojo::IOLoop->stop; });
-Mojo::IOLoop->start;
-is $err, '', 'no error';
-is_deeply \@state, [qw(queued disconnected queued disconnected queued connected)], 'connected';
+is_deeply \@state, [qw(queued disconnected queued connected)], 'connected';
 
 done_testing;

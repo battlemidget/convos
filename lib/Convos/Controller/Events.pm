@@ -56,38 +56,20 @@ sub _event_debug {
   $self->log->debug(Mojo::Util::dumper($data)) if DEBUG;
 }
 
-sub _event_get_user {
-  my ($self, $data) = @_;
-  my $user = $self->backend->user
-    or return $self->_err('Need to log in. Session reset?', {})->finish;
-
-  $self->delay(
-    sub { $user->get($data, shift->begin); },
-    sub {
-      my ($delay, $err, $res) = @_;
-      return $self->_err($err, {})->finish if $err;
-      return $self->send({json => $res});
-    }
-  );
-}
-
 sub _event_send {
   my ($self, $data) = @_;
-  my $connection = $self->backend->user->get_connection($data->{connection_id})
-    or return $self->_err('Connection not found.', $data);
 
-  $self->delay(
-    sub { $connection->send($data->{dialog_id}, $data->{message}, shift->begin); },
-    sub {
-      my ($delay, $err, $res) = @_;
-      $res = $res->TO_JSON if UNIVERSAL::can($res, 'TO_JSON');
-      $res ||= {};
-      $res->{errors} = E($err)->{errors} if $err;
-      $res->{event}  = 'sent';
-      $res->{$_} ||= $data->{$_} for keys %$data;
-      $self->send({json => $res});
-    },
-  );
+  return $self->_err('Connection not found.', $data)
+    unless my $connection = $self->backend->user->get_connection($data->{connection_id});
+
+  return $connection->send_p($data->{dialog_id}, $data->{message})->then(sub {
+    my $res = shift;
+    $res = $res->TO_JSON if UNIVERSAL::can($res, 'TO_JSON');
+    $res ||= {};
+    $res->{event} = 'sent';
+    $res->{$_} ||= $data->{$_} for keys %$data;
+    $self->send({json => $res});
+  });
 }
 
 sub _event_ping {

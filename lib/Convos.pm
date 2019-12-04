@@ -70,6 +70,7 @@ sub startup {
     }
   );
 
+  $self->hook(around_action => \&_around_action);
   $self->hook(
     before_dispatch => sub {
       my $c = shift;
@@ -106,6 +107,34 @@ sub startup {
   $self->core->start;
 }
 
+sub _around_action {
+  my ($next, $c, $action, $last) = @_;
+  my $wantarray = wantarray;
+  my @args      = $wantarray ? $c->$next : (scalar $c->$next);
+
+  if (Scalar::Util::blessed($args[0]) && $args[0]->can('then')) {
+    my $tx = $c->tx;
+    my $p  = Mojo::Promise->resolve($args[0]);
+    $c->render_later if $last;
+    $p->then(
+      $last || sub { $c->continue if $_[0] },
+      sub {
+        if ($c->openapi->spec) {
+          $c->log->error($_[0]);
+          $c->render(openapi => {errors => [{message => $_[0], path => '/'}]}, status => 500);
+        }
+        else {
+          $c->reply->exception($_[0]);
+        }
+        undef $tx;
+      },
+    )->wait;
+    return unless $last;
+  }
+
+  return $wantarray ? @args : $args[0];
+}
+
 sub _config {
   my $self   = shift;
   my $config = $self->config;
@@ -123,9 +152,9 @@ sub _config {
     qq(CONVOS_HOME="$config->{home}" # https://convos.by/doc/config.html#convos_home"));
 
   my $settings = $self->core->settings;
-  $settings->load;
+  $settings->load_p->wait;
   $self->secrets($settings->session_secrets);
-  $settings->save;
+  $settings->save_p->wait;
 
   return $config;
 }
@@ -277,7 +306,7 @@ Copyright (C) 2012-2015, Nordaaker.
 This program is free software, you can redistribute it and/or modify it under
 the terms of the Artistic License version 2.0.
 
-=head1 AUTHOR
+=head1 AUTHORS
 
 Jan Henning Thorsen - C<jhthorsen@cpan.org>
 
