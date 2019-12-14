@@ -5,7 +5,7 @@ no warnings 'utf8';
 use Convos::Util 'DEBUG';
 use IRC::Utils ();
 use Mojo::JSON;
-use Mojo::Util 'term_escape';
+use Mojo::Util qw(term_escape trim);
 use Parse::IRC ();
 use Time::HiRes 'time';
 
@@ -72,22 +72,15 @@ sub send_p {
 }
 
 sub _connect_args {
-  my $self = shift;
-  my $url  = $self->url;
+  my $self   = shift;
+  my $url    = $self->url;
+  my $params = $self->url->query;
 
   $self->_periodic_events;
-  $url->port($url->query->param('tls') ? 6669 : 6667) unless $url->port;
-  $url->query->param(user => 'convos') unless $url->query->param('user');
-
-  if (my $nick = $url->query->param('nick')) {
-    $self->{myinfo}{nick} = $nick;
-  }
-  else {
-    $nick = $self->user->email =~ /^([^@]+)/ ? $1 : 'guest';
-    $nick =~ s!\W!_!g;
-    $url->query->param(nick => $nick);
-    $self->{myinfo}{nick} = $nick;
-  }
+  $url->port($params->param('tls') ? 6669 : 6667) unless $url->port;
+  $params->param(user => 'convos')     unless $params->param('user');
+  $params->param(nick => $self->_nick) unless $params->param('nick');
+  $self->{myinfo}{nick} = $params->param('nick');
 
   return $self->SUPER::_connect_args;
 }
@@ -236,8 +229,8 @@ sub _irc_event_ping {
   $self->_write("PONG $msg->{params}[0]\r\n");
 }
 
-sub _irc_event_pong {
-}
+# Do not care about the PING response
+sub _irc_event_pong { }
 
 sub _irc_event_notice {
   my ($self, $msg) = @_;
@@ -253,21 +246,24 @@ sub _irc_event_privmsg {
   my ($nick, $user, $host) = IRC::Utils::parse_user($msg->{prefix} || '');
   my ($from, $highlight, $target);
 
+  my ($dialog_id, @message) = @{$msg->{params}};
+  $message[0] = join ' ', @message;
+
   # http://www.mirc.com/colors.html
-  $msg->{params}[1] =~ s/\x03\d{0,15}(,\d{0,15})?//g;
-  $msg->{params}[1] =~ s/[\x00-\x1f]//g;
+  $message[0] =~ s/\x03\d{0,15}(,\d{0,15})?//g;
+  $message[0] =~ s/[\x00-\x1f]//g;
 
   if ($user) {
-    $target = $self->_is_current_nick($msg->{params}[0]) ? $nick : $msg->{params}[0];
-    $target = $self->get_dialog($target) || $self->dialog({name => $target});
-    $from   = $nick;
+    $target   = $self->_is_current_nick($dialog_id) ? $nick : $dialog_id,
+      $target = $self->get_dialog($target) || $self->dialog({name => $target});
+    $from = $nick;
   }
 
   $target ||= $self->messages;
   $from   ||= $self->id;
 
   unless ($self->_is_current_nick($nick)) {
-    $highlight = grep { $msg->{params}[1] =~ /\b\Q$_\E\b/i } $self->_nick,
+    $highlight = grep { $message[0] =~ /\b\Q$_\E\b/i } $self->_nick,
       @{$self->user->highlight_keywords};
   }
 
@@ -279,7 +275,7 @@ sub _irc_event_privmsg {
     {
       from      => $from,
       highlight => $highlight ? Mojo::JSON->true : Mojo::JSON->false,
-      message   => $msg->{params}[1],
+      message   => $message[0],
       ts        => time,
       type      => _message_type($msg),
     }
@@ -603,7 +599,7 @@ sub _send_message_p {
       $msg->{event} = lc $msg->{command};
       $self->_irc_event_privmsg($msg);
     }
-    return;
+    return {};
   });
 }
 
@@ -657,7 +653,7 @@ sub _send_nick_p {
   my ($self, $nick) = @_;
   $self->url->query->param(nick => $nick);
   return $self->_write("NICK $nick\r\n") if $self->{stream};
-  return Mojo::Promise->resolve;
+  return Mojo::Promise->resolve({});
 }
 
 sub _send_part_p {
@@ -740,7 +736,7 @@ sub _split_message {
     $n++;
   }
 
-  return @messages;
+  return map { trim $_ } @messages;
 }
 
 sub _stream {
@@ -750,7 +746,7 @@ sub _stream {
   unless ($err) {
     my $url = $self->url;
     $self->_write(sprintf "PASS %s\r\n", $url->password) if length $url->password;
-    $self->_write(sprintf "NICK %s\r\n", $url->query->param('nick'));
+    $self->_write(sprintf "NICK %s\r\n", $self->_nick);
     $self->_write(sprintf "USER %s 0 * :%s\r\n", $url->query->param('user'), 'https://convos.by/');
   }
 }

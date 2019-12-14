@@ -10,22 +10,14 @@ use Mojo::Loader 'data_section';
 use Mojo::URL;
 use Mojo::Util 'term_escape';
 
-our ($CONVOS_HOME, $IRC_SERVER, $TEST, @IRC_MESSAGES);
+our ($CONVOS_HOME, $IRC_SERVER);
 
 $ENV{CONVOS_SECRETS} = 'not-very-secret';
 $ENV{MOJO_LOG_LEVEL} = 'error' unless $ENV{HARNESS_IS_VERBOSE};
 
-sub irc_messages {
-  my $messages = Mojo::Collection->new(@IRC_MESSAGES);
-  @IRC_MESSAGES = ();
-  return $messages;
-}
-
 sub irc_server_connect {
   my ($class, $connection) = @_;
 
-  $connection->on(irc_message => sub { push @IRC_MESSAGES, $_[1] })
-    unless @{$connection->subscribers('irc_message')};
   return $connection->url($IRC_SERVER->{connect_url}->clone)->connect if $IRC_SERVER;
 
   my $port = Mojo::IOLoop::Server->generate_port;
@@ -39,19 +31,15 @@ sub irc_server_connect {
 
 sub irc_server_messages {
   my ($class, @rules) = @_;
+  my $p  = 0;
+  my $cb = $IRC_SERVER->on(message => sub { $class->_on_irc_server_message(\@rules, \$p, @_) });
 
-  $class->_server_write_to_connections($IRC_SERVER, shift @rules) if @rules % 2;
-  return unless @rules;
+  while ($p < @rules) {
+    $class->_on_irc_server_message(\@rules, \$p, $IRC_SERVER, '') if $rules[$p] eq 'from_server';
+    Mojo::IOLoop->one_tick;
+  }
 
-  Test::More::subtest(
-    $TEST => sub {
-      Test::More::plan(tests => @rules / 2);
-      my $p  = 0;
-      my $cb = $IRC_SERVER->on(message => sub { $class->_on_irc_server_message(\@rules, \$p, @_) });
-      Mojo::IOLoop->one_tick while $p < @rules;
-      $IRC_SERVER->unsubscribe(message => $cb);
-    }
-  );
+  $IRC_SERVER->unsubscribe(message => $cb);
 }
 
 sub messages {
@@ -84,6 +72,13 @@ sub t {
   Test::Mojo->new($_[1] || 'Convos');
 }
 
+sub wait_success {
+  my $err = '';
+  shift->catch(sub { $err = shift; })->wait;
+  local $Test::Builder::Level = $Test::Builder::Level + 1;
+  Test::More::is($err, '', shift || 'promise resolved');
+}
+
 sub import {
   my $class  = shift;
   my $caller = shift || caller;
@@ -105,7 +100,8 @@ HERE
     = File::Spec->catdir($FindBin::Bin, File::Spec->updir, "local", "test-$script");
   File::Path::remove_tree($CONVOS_HOME) if -d $CONVOS_HOME;
   no strict 'refs';
-  *{"$caller\::TEST"} = \$TEST;
+  my $wait_success = \&wait_success;
+  *{"$caller\::wait_success"} = \$wait_success;
 }
 
 END {
@@ -135,26 +131,28 @@ sub _on_irc_server_message {
   my ($class, $rules, $pos, $server, $incoming) = @_;
 
   my ($re, $response) = ($rules->[$$pos], $rules->[$$pos + 1]);
-  return unless $re;
+  return unless $response;
+
+  my $next = $$pos + 2;
+  while (UNIVERSAL::isa($rules->[$next], 'Convos::Core::Connection')) {
+    my $event_name = $rules->[$next + 1];
+    $rules->[$next]->once($event_name => sub { Test::More::ok(1, "$event_name()"); $$pos += 2 });
+    $next += 2;
+  }
+
+  if ($re eq 'from_server') {
+    $response = $class->_server_write_to_connections($server, $response);
+    Test::More::ok(1, "sent [$$pos] $response");
+    $$pos += 2;
+    return;
+  }
 
   Test::More::note("irc_server_messages '$incoming' =~ $re ($response)") if 0;
   return unless $incoming =~ $re;
 
   $response = $class->_server_write_to_connections($server, $response);
-  $response =~ s!\n!\\x0a!g;
-  Test::More::like($incoming, $re, term_escape "irc_server_messages [$$pos] $response");
+  Test::More::like($incoming, $re, term_escape "responded [$$pos] $response");
   $$pos += 2;
-
-  if (UNIVERSAL::isa($rules->[$$pos], 'Convos::Core::Connection')) {
-    my $event_name = $rules->[$$pos + 1];
-    Test::More::note("irc_server_messages '$incoming' ==> $event_name") if 0;
-    return $rules->[$$pos]->once(
-      $event_name => sub {
-        Test::More::ok(1, "irc event $event_name");
-        $$pos += 2;
-      }
-    );
-  }
 }
 
 sub _server_write_to_connections {
@@ -167,7 +165,8 @@ sub _server_write_to_connections {
   }
 
   $server->emit(write => $response);
-  return $response;
+  $response =~ s!\n!\\x0a!g;
+  term_escape $response;
 }
 
 sub _stream_write {

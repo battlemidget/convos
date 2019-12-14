@@ -55,7 +55,7 @@ $t->get_ok('/api/user?connections=true&dialogs=true&notifications=true')->status
   {
     connections => [{
       connection_id       => 'irc-localhost',
-      me                  => {},
+      me                  => {nick => 'superman'},
       name                => 'localhost',
       on_connect_commands => [],
       protocol            => 'irc',

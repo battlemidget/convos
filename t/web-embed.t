@@ -4,7 +4,7 @@ use t::Helper;
 my $t = t::Helper->t;
 
 my $user = $t->app->core->user({email => 'superman@example.com'})->set_password('s3cret');
-$user->save_p->wait;
+$user->save_p->$wait_success('save_p');
 
 $t->get_ok('/api/embed')->status_is(400);
 $t->get_ok('/api/embed?url=/foo')->status_is(401);

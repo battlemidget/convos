@@ -6,7 +6,7 @@ use Convos::Core::Backend::File;
 
 my $t    = t::Helper->t;
 my $user = $t->app->core->user({email => 'superman@example.com'})->set_password('s3cret');
-$user->save_p->wait;
+$user->save_p->$wait_success('save_p');
 
 my $connection = $user->connection({name => 'localhost', protocol => 'irc'});
 my $dialog     = $connection->dialog({name => '#convos'});

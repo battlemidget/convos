@@ -15,7 +15,7 @@ t::Helper->irc_server_connect($connection);
 
 $connection->on(state => sub { return unless $_[1] eq 'me'; $nick = $_[2]->{nick}; });
 
-$TEST = 'change nick to nick_young_';
+note 'change nick to nick_young_';
 t::Helper->irc_server_messages(
   qr{NICK nick_young\b} =>
     ":hybrid8.debian.local 433 * nick_young :Nickname is already in use.\r\n",
@@ -24,7 +24,7 @@ t::Helper->irc_server_messages(
 is $connection->url->query->param('nick'), 'nick_young', 'nick_young set in connect url';
 is $connection->{myinfo}{nick}, 'nick_young_', 'connection nick nick_young_';
 
-$TEST = 'NICK command sent by recurring timer';
+note 'NICK command sent by recurring timer';
 t::Helper->irc_server_messages(
   qr{NICK nick_young\b} => ":nick_young_!superman\@i.love.debian.org NICK :nick_young\r\n",
   $connection           => '_irc_event_nick',
@@ -32,7 +32,7 @@ t::Helper->irc_server_messages(
 is $connection->url->query->param('nick'), 'nick_young', 'nick_young set in connect url';
 is $connection->{myinfo}{nick}, 'nick_young', 'connection nick nick_young';
 
-$TEST = 'change nick';
+note 'change nick';
 $connection->send_p('', '/nick n2');
 t::Helper->irc_server_messages(
   qr{NICK n2} => ":nick_young!superman\@i.love.debian.org NICK :n2\r\n",

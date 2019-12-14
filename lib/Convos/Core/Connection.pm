@@ -153,7 +153,16 @@ sub _debug {
   #warn sprintf "[%s/%s] $msg at %s line %s\n", $self->user->email, $self->id, @args, @caller[1, 2];
 }
 
-sub _nick { $_[0]->{myinfo}{nick} ||= $_[0]->url->query->param('nick') || '' }
+# The active nick
+sub _nick {
+  my $self = shift;
+  my $nick;
+  return $nick if $nick = $self->{myinfo}{nick};
+  return $nick if $nick = $self->url->query->param('nick');
+  $nick = $self->user->email =~ /^([^@]+)/ ? $1 : 'guest';
+  $nick =~ s!\W!_!g;
+  return $nick;
+}
 
 sub _notice {
   my ($self, $message) = (shift, shift);

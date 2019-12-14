@@ -4,7 +4,7 @@ use t::Helper;
 
 my $t    = t::Helper->t;
 my $user = $t->app->core->user({email => 'superman@example.com'})->set_password('s3cret');
-$user->save_p->wait;
+$user->save_p->$wait_success('save_p');
 
 $t->post_ok('/api/user/login', json => {email => 'superman@example.com', password => 's3cret'})
   ->status_is(200);
@@ -54,7 +54,7 @@ $t->get_ok('/api/user?connections=true&dialogs=true')->status_is(200)->json_is(
     },
     {
       connection_id       => 'irc-localhost',
-      me                  => {nick => ''},
+      me                  => {},
       name                => 'localhost',
       on_connect_commands => [],
       protocol            => 'irc',

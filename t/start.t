@@ -11,27 +11,27 @@ my $user;
 
 note 'jhthorsen connections';
 $user = $core->user({email => 'jhthorsen@cpan.org'});
-$user->save_p->wait;
+$user->save_p->$wait_success('save_p');
 
 # 1: localhost connects instantly
 $user->connection({name => 'localhost', protocol => 'irc'})
-  ->tap(sub { shift->url->parse('irc://localhost') })->save_p->wait;
+  ->tap(sub { shift->url->parse('irc://localhost') })->save_p->$wait_success('save_p');
 
 # 2: instant or queued
 $user->connection({name => 'magnet', protocol => 'irc'})
-  ->tap(sub { shift->url->parse('irc://irc.perl.org') })->save_p->wait;
+  ->tap(sub { shift->url->parse('irc://irc.perl.org') })->save_p->$wait_success('save_p');
 $user->connection({name => 'magnet2', protocol => 'irc'})
-  ->tap(sub { shift->url->parse('irc://irc.perl.org') })->save_p->wait;
+  ->tap(sub { shift->url->parse('irc://irc.perl.org') })->save_p->$wait_success('save_p');
 
 note 'mramberg connections';
 $user = $core->user({email => 'mramberg@cpan.org'});
-$user->save_p->wait;
+$user->save_p->$wait_success('save_p');
 
 # 0: will not be connected
 my $conn_0 = $user->connection({name => 'localhost', protocol => 'Irc'});
 $conn_0->url->parse('irc://127.0.0.1');
-$conn_0->set_wanted_state_p('disconnected')->wait;
-$conn_0->save_p->wait;
+$conn_0->set_wanted_state_p('disconnected')->$wait_success('set_wanted_state_p');
+$conn_0->save_p->$wait_success('save_p');
 
 # 2: instant or queued
 $user->connection({name => 'freenode', protocol => 'irc'})
